@@ -13,6 +13,37 @@ from openai import OpenAI
 import pandas as pd
 from datasets import load_dataset
 
+import copy
+import warnings
+warnings.filterwarnings("ignore")
+
+import polars as pl
+
+def load_parquet(data_dir=None, return_type='pd'):
+    """
+    Load data from Parquet files with optional filtering on date_id, time_id, and selected columns.
+
+    Parameters:
+    - date_id_range (tuple, optional): Range of date_id to filter (start, end). Default is None, which means all dates.
+    - time_id_range (tuple, optional): Range of time_id to filter (start, end). Default is None, which means all times.
+    - columns (list, optional): List of columns to load. Default is None, which means all columns.
+    - return_type (str, optional): Type of data to return ('pl' for Polars DataFrame or 'pd' for Pandas DataFrame). Default is 'pl'.
+
+    Returns:
+    - pl.DataFrame or pd.DataFrame: The filtered data as a Polars or Pandas DataFrame.
+    """
+    # data_dir = '../input/jane-street-real-time-market-data-forecasting'
+    # Load data using Polars lazy loading (scan_parquet)
+    # data = pl.scan_parquet(f"{data_dir}/train.parquet")
+    data = pl.scan_parquet(f"{data_dir}")
+
+    # Collect the data to execute the lazy operations
+    if return_type == 'pd':
+        return data.collect().to_pandas()
+    else:
+        return data.collect()
+
+
 def images_to_base64_list(image_list):
     base64_list = []
     for img in image_list:
@@ -25,7 +56,7 @@ def images_to_base64_list(image_list):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, required=True, choices=['MiniCPM', 'MiniCPMV2.0', 'MiniCPMV2.6', 'gpt4o'])
+    parser.add_argument('--model_name', type=str, required=True, choices=['MiniCPM', 'MiniCPMV2.0', 'MiniCPMV2.6', 'gpt4o', 'LLaVA-ov-0.5b'])
     parser.add_argument('--dataset_name', type=str, choices=['ArxivQA', 'ChartQA', 'PlotQA', 'MP-DocVQA', 'SlideVQA', 'InfoVQA'], required=True)
     parser.add_argument('--rank', type=int, required=True)
     parser.add_argument('--world_size', type=int, required=True)
@@ -79,15 +110,18 @@ def main():
             raise Exception("ocr_type is None!")
         ocr_type = args.ocr_type
     
-    input_dir = None # Write your input path here
-    if (task_type == 'text'):
-        input_dir = os.path.join(input_dir, 'ocr', f'ocr_{ocr_type}', dataset_name)
-    else:
-        input_dir = os.path.join(input_dir, 'image', dataset_name)
+    input_dir = "/ssddata/liuyue/github/VisRAG/qa_datasets" # Write your input path here
+    # if (task_type == 'text'):
+    #     input_dir = os.path.join(input_dir, 'ocr', f'ocr_{ocr_type}', dataset_name)
+    # else:
+    #     input_dir = os.path.join(input_dir, 'image', dataset_name)
 
-    query_path = os.path.join(input_dir, f'{dataset_name}-eval-queries.parquet')
-    corpus_path = os.path.join(input_dir, f'{dataset_name}-eval-corpus.parquet')
-        
+    # query_path = os.path.join(input_dir, f'{dataset_name}-eval-queries.parquet')
+    # corpus_path = os.path.join(input_dir, f'{dataset_name}-eval-corpus.parquet')
+
+    query_path = os.path.join(input_dir, f'VisRAG-Ret-Test-{dataset_name}', 'queries')
+    corpus_path = os.path.join(input_dir, f'VisRAG-Ret-Test-{dataset_name}', 'corpus')
+
     # build docid->content
     content = {}
     if (task_type == 'text'):
@@ -97,7 +131,9 @@ def main():
             text = corpus_ds[i]['text']
             content[corpus_id] = text
     else:
-        corpus_ds = load_dataset(f"openbmb/VisRAG-Ret-Test-{dataset_name}", name="corpus", split="train")
+        # corpus_ds = load_dataset(f"openbmb/VisRAG-Ret-Test-{dataset_name}", name="corpus", split="train")
+        corpus_ds = load_dataset(f"{input_dir}/VisRAG-Ret-Test-{dataset_name}", name="corpus", split="train")
+        
         for i in range(len(corpus_ds)):
             corpus_id = corpus_ds[i]['corpus-id']
             image = corpus_ds[i]['image'].convert('RGB')
@@ -120,7 +156,7 @@ def main():
         model = ModelForCausalLM_class.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, trust_remote_code=True)
 
     elif (model_name == 'MiniCPMV2.0'):
-        model_name_or_path = None # Write your model path here
+        model_name_or_path = "/ssddata/liuyue/github/VisRAG/pretrained_models/MiniCPM-V-2" # Write your model path here
         tokenizer = Tokenizer_class.from_pretrained(model_name_or_path, trust_remote_code=True)
         model = ModelForCausalLM_class.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, trust_remote_code=True)
         model = model.to(device='cuda', dtype=torch.bfloat16)
@@ -132,6 +168,26 @@ def main():
             attn_implementation='sdpa', torch_dtype=torch.bfloat16)
         model = model.eval().cuda()
         tokenizer = Tokenizer_class.from_pretrained(model_name_or_path, trust_remote_code=True)
+    
+    elif model_name == "LLaVA-ov-0.5b":
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path, process_images, tokenizer_image_token
+        from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN, IGNORE_INDEX
+        from llava.conversation import conv_templates, SeparatorStyle
+
+        model_name_or_path = "/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-0.5b-ov"
+        model_name = "llava_qwen"
+        device = "cuda"
+        device_map = "auto"
+        llava_model_args = {
+                "multimodal": True,
+            }
+        overwrite_config = {}
+        overwrite_config["image_aspect_ratio"] = "pad"
+        llava_model_args["overwrite_config"] = overwrite_config
+        tokenizer, model, image_processor, max_length = load_pretrained_model(model_name_or_path, None, model_name, device_map=device_map, **llava_model_args)
+
+        model.eval()
 
     if (model_name != 'gpt4o'):
         model.to(rank)
@@ -139,7 +195,8 @@ def main():
     history_datas = []
     correct = 0
     total_num = 0
-    query_df = pd.read_parquet(query_path)
+    # query_df = pd.read_parquet(query_path)
+    query_df = load_parquet(query_path)
     for cnt, row in query_df.iterrows():
         if (cnt % world_size != rank):
             continue
@@ -321,6 +378,43 @@ def main():
                         sampling=False,
                         max_new_tokens=max_new_tokens
                     )
+                
+                elif model_name == "LLaVA-ov-0.5b":
+                    # input = [{'role': 'user', 'content': image_list + [input[0]['content']]}]
+                    image_tensors = process_images(image_list, image_processor, model.config)
+                    image_tensors = [_image.to(dtype=torch.float16, device=device) for _image in image_tensors]
+                    conv_template = "qwen_1_5"
+                    question = f"{DEFAULT_IMAGE_TOKEN}\n\n{DEFAULT_IMAGE_TOKEN}\n" + input[0]['content']
+
+                    conv = copy.deepcopy(conv_templates[conv_template])
+                    conv.append_message(conv.roles[0], question)
+                    conv.append_message(conv.roles[1], None)
+                    prompt_question = conv.get_prompt()
+
+                    input_ids = tokenizer_image_token(prompt_question, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).to(device)
+                    image_sizes = [image.size for image in image_list]
+
+                    cont = model.generate(
+                        input_ids,
+                        images=image_tensors,
+                        image_sizes=image_sizes,
+                        do_sample=False,
+                        temperature=0,
+                        max_new_tokens=max_new_tokens,
+                    )
+                    text_outputs = tokenizer.batch_decode(cont, skip_special_tokens=True)
+                    # print(text_outputs[0])
+                    responds = text_outputs[0]
+
+                    
+                    # responds = model.chat(
+                    #     image=None,
+                    #     msgs=input,
+                    #     tokenizer=tokenizer,
+                    #     sampling=False,
+                    #     max_new_tokens=max_new_tokens
+                    # )
+                
                 elif (model_name == 'gpt4o'):
                     max_retries = 10
                     retries = 0
@@ -486,10 +580,9 @@ def main():
             print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}")
         elif (dataset_name == 'InfoVQA'):
             print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}")
-        QA
         history_datas.append(json.dumps(history_data))
                 
-    output_dir = None # Write your output path here
+    output_dir = "/ssddata/liuyue/github/VisRAG/data/checkpoints/generator" # Write your output path here
 
     prefix = model_name
     output_dir = os.path.join(output_dir, prefix)
