@@ -13,6 +13,7 @@ from openai import OpenAI
 import pandas as pd
 from datasets import load_dataset
 
+import numpy as np
 import copy
 import warnings
 warnings.filterwarnings("ignore")
@@ -56,7 +57,7 @@ def images_to_base64_list(image_list):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, required=True, choices=['MiniCPM', 'MiniCPMV2.0', 'MiniCPMV2.6', 'gpt4o', 'LLaVA-ov-0.5b'])
+    parser.add_argument('--model_name', type=str, required=True, choices=['MiniCPM', 'MiniCPMV2.0', 'MiniCPMV2.6', 'gpt4o', 'LLaVA-ov-0.5b', 'LLaVA-ov-7b', 'LLaVA-ov-72b-sft', 'LLaVA-ov-72b-chat'])
     parser.add_argument('--dataset_name', type=str, choices=['ArxivQA', 'ChartQA', 'PlotQA', 'MP-DocVQA', 'SlideVQA', 'InfoVQA'], required=True)
     parser.add_argument('--rank', type=int, required=True)
     parser.add_argument('--world_size', type=int, required=True)
@@ -169,27 +170,38 @@ def main():
         model = model.eval().cuda()
         tokenizer = Tokenizer_class.from_pretrained(model_name_or_path, trust_remote_code=True)
     
-    elif model_name == "LLaVA-ov-0.5b":
+    # elif model_name == "LLaVA-ov-0.5b":
+    elif 'LLaVA-ov' in model_name:
         from llava.model.builder import load_pretrained_model
         from llava.mm_utils import get_model_name_from_path, process_images, tokenizer_image_token
         from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN, IGNORE_INDEX
         from llava.conversation import conv_templates, SeparatorStyle
+        from accelerate import Accelerator
+        accelerator = Accelerator()
 
-        model_name_or_path = "/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-0.5b-ov"
-        model_name = "llava_qwen"
+        model2path = {
+            'LLaVA-ov-0.5b': '/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-0.5b-ov',
+            'LLaVA-ov-7b': '/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-7b-ov',
+            'LLaVA-ov-72b-sft': '/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-72b-ov-sft',
+            'LLaVA-ov-72b-chat': '/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-72b-ov-chat',
+        }
+
+        model_name_or_path = model2path[model_name]
+        model_name0 = "llava_qwen"
         device = "cuda"
         device_map = "auto"
+        # device_map = accelerator.device
         llava_model_args = {
                 "multimodal": True,
             }
         overwrite_config = {}
         overwrite_config["image_aspect_ratio"] = "pad"
         llava_model_args["overwrite_config"] = overwrite_config
-        tokenizer, model, image_processor, max_length = load_pretrained_model(model_name_or_path, None, model_name, device_map=device_map, **llava_model_args)
+        tokenizer, model, image_processor, max_length = load_pretrained_model(model_name_or_path, None, model_name0, device_map=device_map, **llava_model_args)
 
         model.eval()
 
-    if (model_name != 'gpt4o'):
+    if (model_name != 'gpt4o' and 'LLaVA-ov' not in model_name):
         model.to(rank)
     
     history_datas = []
@@ -207,7 +219,7 @@ def main():
         history_data['qid'] = qid
         answer = row['answer']
         history_data['original_answer'] = answer
-        if (answer == None):
+        if (answer is None):
             raise Exception
         if (use_positive_sample):
             if (dataset_name == 'SlideVQA'):
@@ -379,17 +391,27 @@ def main():
                         max_new_tokens=max_new_tokens
                     )
                 
-                elif model_name == "LLaVA-ov-0.5b":
+                # elif model_name == "LLaVA-ov-0.5b":
+                elif 'LLaVA-ov' in model_name:
                     # input = [{'role': 'user', 'content': image_list + [input[0]['content']]}]
                     image_tensors = process_images(image_list, image_processor, model.config)
                     image_tensors = [_image.to(dtype=torch.float16, device=device) for _image in image_tensors]
                     conv_template = "qwen_1_5"
-                    question = f"{DEFAULT_IMAGE_TOKEN}\n\n{DEFAULT_IMAGE_TOKEN}\n" + input[0]['content']
+                    # question = f"{DEFAULT_IMAGE_TOKEN}\n\n{DEFAULT_IMAGE_TOKEN}\n" + input[0]['content']
+
+                    n_images = len(image_tensors)
+                    question = ''
+                    for iidx in range(n_images):
+                        question += f'{DEFAULT_IMAGE_TOKEN}\n'
+                    question += input[0]['content']
 
                     conv = copy.deepcopy(conv_templates[conv_template])
                     conv.append_message(conv.roles[0], question)
                     conv.append_message(conv.roles[1], None)
                     prompt_question = conv.get_prompt()
+
+                    # print(f'prompt_question: {prompt_question}')
+                    # exit(0)
 
                     input_ids = tokenizer_image_token(prompt_question, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).to(device)
                     image_sizes = [image.size for image in image_list]
@@ -469,6 +491,7 @@ def main():
         responds_backup = responds
             
         #pre-process
+        correct_sig = False
         if (dataset_name == 'ChartQA'):
             responds = preprocess_text(responds)
             answer = preprocess_text(answer)
@@ -482,8 +505,10 @@ def main():
             print('---------------')
             if (responds == answer):
                 correct += 1
+                correct_sig = True
             elif(is_numeric_data(responds) and is_numeric_data(answer) and answer != '0' and is_within_5_percent(responds, answer)):
                 correct += 1
+                correct_sig = True
         elif (dataset_name == 'ArxivQA'):
             responds = responds[0].upper()
             answer = answer[0].upper()
@@ -493,6 +518,7 @@ def main():
             print('---------------')
             if (responds == answer):
                 correct += 1
+                correct_sig = True
         elif (dataset_name == 'PlotQA'):
             responds = preprocess_text(responds)
             is_str = 1
@@ -510,12 +536,15 @@ def main():
             print('---------------')
             if (responds == answer):
                 correct += 1
+                correct_sig = True
             elif(is_numeric_data(responds) and (not is_str) and float(answer) != 0.0 and is_within_5_percent(responds, answer)):
                 correct += 1
+                correct_sig = True
         elif (dataset_name == 'MP-DocVQA'):
             responds = preprocess_text(responds)
             if (not isinstance(answer, list)):
-                answer = [answer]
+                # answer = [answer]
+                answer = answer.tolist()
             for i, answer_item in enumerate(answer):
                 answer[i] = preprocess_text(answer_item)
             if ('%' in responds and '%' not in answer[0]):
@@ -529,6 +558,7 @@ def main():
             for answer_item in answer:
                 if (responds == answer_item):
                     correct += 1
+                    correct_sig = True
                     break
         elif (dataset_name == 'SlideVQA'):
             responds = preprocess_text(responds)
@@ -543,10 +573,12 @@ def main():
             print('---------------')
             if (responds == answer):
                 correct += 1
+                correct_sig = True
         elif (dataset_name == 'InfoVQA'):
             responds = preprocess_text(responds)
             if (not isinstance(answer, list)):
-                answer = [answer]
+                # answer = [answer]
+                answer = answer.tolist()
             for i, answer_item in enumerate(answer):
                 answer[i] = preprocess_text(answer_item)
             if ('%' in responds and '%' not in answer[0]):
@@ -560,6 +592,7 @@ def main():
             for answer_item in answer:
                 if (responds == answer_item):
                     correct += 1
+                    correct_sig = True
                     break
         
         history_data['preprocessed_responds'] = responds
@@ -569,17 +602,21 @@ def main():
         
         # calculate accuracy
         if (dataset_name == 'ChartQA'):     
-            print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}")
+            print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}, {correct_sig}")
         elif (dataset_name == 'ArxivQA'):
-            print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}")
+            print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}, {correct_sig}")
         elif (dataset_name == 'PlotQA'):
-            print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}")
+            print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}, {correct_sig}")
         elif (dataset_name == 'MP-DocVQA'):
-            print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}")
+            print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}, {correct_sig}")
         elif (dataset_name == "SlideVQA"):
-            print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}")
+            print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}, {correct_sig}")
         elif (dataset_name == 'InfoVQA'):
-            print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}")
+            print(f"{dataset_name}:{total_num}_Accuracy:{float(correct) / total_num}, {correct_sig}")
+
+        for k,v in history_data.items():
+            if type(v) == np.ndarray:
+                history_data[k] = v.tolist()
         history_datas.append(json.dumps(history_data))
                 
     output_dir = "/ssddata/liuyue/github/VisRAG/data/checkpoints/generator" # Write your output path here
