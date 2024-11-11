@@ -87,7 +87,7 @@ def load_parquet(root=None, return_type='pd'):
 if __name__ == "__main__":
 
     ### extract answer correct or not from the log
-    root = "/ssddata/liuyue/github/VisRAG/logs/generator/MiniCPMV2.6"
+    root = "/ssddata/liuyue/github/VisRAG/logs/generate/LLaVA-ov-7b"
     file_temp = "eval_g_{}_1.log"
     datasets = [
         "ArxivQA",
@@ -115,8 +115,8 @@ if __name__ == "__main__":
         data2correctlist[data] = {"correct": correct}
 
     #### extract query_id from history jsonl, it has the same query order with that of log
-    root = "/ssddata/liuyue/github/VisRAG/data/checkpoints/generator/MiniCPMV2.6/upper_bound"
-    file_temp = "MiniCPMV2.6_upper_bound_{}_oracle_history.jsonl"
+    root = "/ssddata/liuyue/github/VisRAG/data/checkpoints/generator/LLaVA-ov-7b/upper_bound"
+    file_temp = "LLaVA-ov-7b_upper_bound_{}_oracle_history.jsonl"
     for data in datasets:
         path = f"{root}/{file_temp.format(data)}"
 
@@ -136,9 +136,9 @@ if __name__ == "__main__":
 
     
     #### load data 
-    root = "/ssddata/liuyue/github/VisRAG/QAdataset"
+    root = "/ssddata/liuyue/github/VisRAG/qa_datasets"
     file_temp = "VisRAG-Ret-Test-{}"
-    outdir = "/ssddata/liuyue/github/VisRAG/data/checkpoints/generator/MiniCPMV2.6/upper_bound"
+    outdir = "/ssddata/liuyue/github/VisRAG/data/checkpoints/generator/LLaVA-ov-7b/upper_bound"
     for data in datasets:
         print(f"{data}")
 

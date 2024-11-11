@@ -4,7 +4,7 @@ import pandas as pd
 
 if __name__ == "__main__":
 
-    root = "/ssddata/liuyue/github/VisRAG/logs/generate/LLaVA-ov-0.5b"
+    root = "/ssddata/liuyue/github/VisRAG/logs/generate/LLaVA-ov-7b"
     file_temp = "eval_g_{}_1.log"
     datasets = [
         "ArxivQA",
