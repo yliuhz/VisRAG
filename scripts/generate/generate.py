@@ -3,7 +3,7 @@ import os
 import argparse
 import glob
 from openmatch.utils import load_from_trec
-import torch
+
 from PIL import Image
 import base64
 from io import BytesIO
@@ -19,6 +19,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import polars as pl
+import torch
 
 def load_parquet(data_dir=None, return_type='pd'):
     """
@@ -74,6 +75,7 @@ def parse_args():
     return args
 
 def main():
+    
     args = parse_args()
     model_name = args.model_name
 
@@ -112,7 +114,10 @@ def main():
             raise Exception("ocr_type is None!")
         ocr_type = args.ocr_type
     
-    input_dir = "/ssddata/liuyue/github/VisRAG/qa_datasets" # Write your input path here
+    
+
+    input_dir = "/ssddata/liuyue/github/PruneRAG/VisRAG/qa_datasets" # Write your input path here
+    input_dir_sample = "/ssddata/liuyue/github/PruneRAG/VisRAG/qa_datasets_sample"
     # if (task_type == 'text'):
     #     input_dir = os.path.join(input_dir, 'ocr', f'ocr_{ocr_type}', dataset_name)
     # else:
@@ -121,7 +126,8 @@ def main():
     # query_path = os.path.join(input_dir, f'{dataset_name}-eval-queries.parquet')
     # corpus_path = os.path.join(input_dir, f'{dataset_name}-eval-corpus.parquet')
 
-    query_path = os.path.join(input_dir, f'VisRAG-Ret-Test-{dataset_name}', 'queries')
+    # query_path = os.path.join(input_dir, f'VisRAG-Ret-Test-{dataset_name}', 'queries')
+    query_path = os.path.join(input_dir_sample, f'VisRAG-Ret-Test-{dataset_name}', 'queries')
     corpus_path = os.path.join(input_dir, f'VisRAG-Ret-Test-{dataset_name}', 'corpus')
 
     # build docid->content
@@ -158,14 +164,14 @@ def main():
         model = ModelForCausalLM_class.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, trust_remote_code=True)
 
     elif (model_name == 'MiniCPMV2.0'):
-        model_name_or_path = "/ssddata/liuyue/github/VisRAG/pretrained_models/MiniCPM-V-2" # Write your model path here
+        model_name_or_path = "/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/MiniCPM-V-2" # Write your model path here
         tokenizer = Tokenizer_class.from_pretrained(model_name_or_path, trust_remote_code=True)
         model = ModelForCausalLM_class.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, trust_remote_code=True)
         model = model.to(device='cuda', dtype=torch.bfloat16)
         model.eval()
 
     elif (model_name == 'MiniCPMV2.6'):
-        model_name_or_path = '/ssddata/liuyue/github/VisRAG/pretrained_models/MiniCPM-V-2_6' # Write your model path here
+        model_name_or_path = '/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/MiniCPM-V-2_6' # Write your model path here
         model = Model_class.from_pretrained(model_name_or_path, trust_remote_code=True,
             attn_implementation='sdpa', torch_dtype=torch.bfloat16)
         model = model.eval().cuda()
@@ -181,10 +187,10 @@ def main():
         accelerator = Accelerator()
 
         model2path = {
-            'LLaVA-ov-0.5b': '/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-0.5b-ov',
-            'LLaVA-ov-7b': '/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-7b-ov',
-            'LLaVA-ov-72b-sft': '/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-72b-ov-sft',
-            'LLaVA-ov-72b-chat': '/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-72b-ov-chat',
+            'LLaVA-ov-0.5b': '/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/llava-onevision-qwen2-0.5b-ov',
+            'LLaVA-ov-7b': '/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/llava-onevision-qwen2-7b-ov',
+            'LLaVA-ov-72b-sft': '/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/llava-onevision-qwen2-72b-ov-sft',
+            'LLaVA-ov-72b-chat': '/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/llava-onevision-qwen2-72b-ov-chat',
         }
 
         model_name_or_path = model2path[model_name]
@@ -198,7 +204,7 @@ def main():
         overwrite_config = {}
         overwrite_config["image_aspect_ratio"] = "pad"
         llava_model_args["overwrite_config"] = overwrite_config
-        tokenizer, model, image_processor, max_length = load_pretrained_model(model_name_or_path, None, model_name0, device_map=device_map, attn_implementation='eager', torch_dtype='bfloat16', **llava_model_args)
+        tokenizer, model, image_processor, max_length = load_pretrained_model(model_name_or_path, None, model_name0, device_map=device_map, torch_dtype='bfloat16', **llava_model_args)
 
         model.eval()
 
@@ -237,7 +243,6 @@ def main():
     elif model_name == "Qwen2-VL-7B-Instruct":
         from transformers import Qwen2VLForConditionalGeneration, AutoTokenizer, AutoProcessor
         from qwen_vl_utils import process_vision_info
-        import torch
 
         model = Qwen2VLForConditionalGeneration.from_pretrained(
             "Qwen/Qwen2-VL-7B-Instruct",
@@ -254,8 +259,7 @@ def main():
     correct = 0
     total_num = 0
     # query_df = pd.read_parquet(query_path)
-    # query_df = load_parquet(query_path)
-    query_df = query_df.sample(frac=1).reset_index(drop=True).loc[:500]
+    query_df = load_parquet(query_path)
     for cnt, row in query_df.iterrows():
         if (cnt % world_size != rank):
             continue
@@ -764,7 +768,7 @@ def main():
                 history_data[k] = v.tolist()
         history_datas.append(json.dumps(history_data))
                 
-    output_dir = "/ssddata/liuyue/github/VisRAG/data/checkpoints/generator" # Write your output path here
+    output_dir = "/ssddata/liuyue/github/PruneRAG/VisRAG/data/checkpoints/generator/sample" # Write your output path here
 
     prefix = model_name
     output_dir = os.path.join(output_dir, prefix)
@@ -809,5 +813,4 @@ def main():
     
     
 if __name__ == '__main__':
-
     main()

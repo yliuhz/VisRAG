@@ -6,7 +6,7 @@ cd ..
 MODEL=$1
 # MODEL=MiniCPMV2.0
 
-[[ -d logs/generate/$MODEL ]] || mkdir -p logs/generate/$MODEL
+[[ -d logs/generate/sample/$MODEL ]] || mkdir -p logs/generate/sample/$MODEL
 
 # for MODEL in LLaVA-ov-0.5b LLaVA-ov-7b LLaVA-ov-72b-sft LLaVA-ov-72b-chat
 # do
@@ -16,9 +16,9 @@ do
 for ORACLE in 0
 do
 # for TOPK in 1 5 10 15 20
-for TOPK in 5
+for TOPK in 1 2 3 4 5 6 7 8 9 10
 do
-CUDA_VISIBLE_DEVICES=4,5,6,7 \
+CUDA_VISIBLE_DEVICES=1,2,6,7 \
     python -u scripts/generate/generate.py \
         --model_name $MODEL \
         --dataset_name $DATA \
@@ -30,7 +30,7 @@ CUDA_VISIBLE_DEVICES=4,5,6,7 \
         --task_type multi_image \
         --concatenate_type horizontal \
         --ocr_type '' 
-        2>&1 | tee logs/generate/$MODEL/eval_g_${DATA}_${ORACLE}_${TOPK}.log
+        2>&1 | tee logs/generate/sample/$MODEL/eval_g_${DATA}_${ORACLE}_${TOPK}.log
 done
 done
 done
