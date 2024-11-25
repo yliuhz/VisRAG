@@ -12,13 +12,18 @@ import io
 # ----------------------- Hardcoded Constants -----------------------
 
 # Model file paths
-DET_MODEL_DIR='/mnt/data/user/tc_agi/user/xubokai/mmtrain/document-convert-models-en/en_PP-OCRv3_det_infer'
-REC_MODEL_DIR='/mnt/data/user/tc_agi/user/xubokai/mmtrain/document-convert-models-en/en_PP-OCRv3_rec_infer'
-CLS_MODEL_DIR='/mnt/data/user/tc_agi/user/xubokai/mmtrain/document-convert-models-en/ch_ppocr_mobile_v2.0_cls_infer'
-REC_LABEL_FILE='/mnt/data/user/tc_agi/user/xubokai/mmtrain/document-convert-models-en/en_PP-OCRv3_rec_infer/en_dict.txt'
+# DET_MODEL_DIR='/mnt/data/user/tc_agi/user/xubokai/mmtrain/document-convert-models-en/en_PP-OCRv3_det_infer'
+# REC_MODEL_DIR='/mnt/data/user/tc_agi/user/xubokai/mmtrain/document-convert-models-en/en_PP-OCRv3_rec_infer'
+# CLS_MODEL_DIR='/mnt/data/user/tc_agi/user/xubokai/mmtrain/document-convert-models-en/ch_ppocr_mobile_v2.0_cls_infer'
+# REC_LABEL_FILE='/mnt/data/user/tc_agi/user/xubokai/mmtrain/document-convert-models-en/en_PP-OCRv3_rec_infer/en_dict.txt'
+
+DET_MODEL_DIR='/ssddata/liuyue/github/VisRAG/scripts/demo/ocr_pipeline/document-convert-models-en/en_PP-OCRv3_det_infer'
+REC_MODEL_DIR='/ssddata/liuyue/github/VisRAG/scripts/demo/ocr_pipeline/document-convert-models-en/en_PP-OCRv3_rec_infer'
+CLS_MODEL_DIR='/ssddata/liuyue/github/VisRAG/scripts/demo/ocr_pipeline/document-convert-models-en/ch_ppocr_mobile_v2.0_cls_infer'
+REC_LABEL_FILE='/ssddata/liuyue/github/VisRAG/scripts/demo/ocr_pipeline/document-convert-models-en/en_PP-OCRv3_rec_infer/en_dict.txt'
 
 # Input image path
-IMAGE_PATH = "/home/jeeves/tcy6/image.png"  # Write your image path here
+IMAGE_PATH = "./examples/form.png"  # Write your image path here
 
 # Inference device configuration
 BACKEND = "gpu"  # Options: "gpu" or "cpu"

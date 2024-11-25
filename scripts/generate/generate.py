@@ -57,7 +57,7 @@ def images_to_base64_list(image_list):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, required=True, choices=['MiniCPM', 'MiniCPMV2.0', 'MiniCPMV2.6', 'gpt4o', 'LLaVA-ov-0.5b', 'LLaVA-ov-7b', 'LLaVA-ov-72b-sft', 'LLaVA-ov-72b-chat'])
+    parser.add_argument('--model_name', type=str, required=True, choices=['MiniCPM', 'MiniCPMV2.0', 'MiniCPMV2.6', 'gpt4o', 'LLaVA-ov-0.5b', 'LLaVA-ov-7b', 'LLaVA-ov-72b-sft', 'LLaVA-ov-72b-chat', 'llava-v1.5-7b', 'Qwen2-VL-7B-Instruct'])
     parser.add_argument('--dataset_name', type=str, choices=['ArxivQA', 'ChartQA', 'PlotQA', 'MP-DocVQA', 'SlideVQA', 'InfoVQA'], required=True)
     parser.add_argument('--rank', type=int, required=True)
     parser.add_argument('--world_size', type=int, required=True)
@@ -69,6 +69,7 @@ def parse_args():
     parser.add_argument('--task_type', type=str, required=True, choices=['text', 'page_concatenation', 'weighted_selection', 'multi_image'])
     parser.add_argument('--concatenate_type', type=str, choices=['horizontal', 'vertical'])
     parser.add_argument('--ocr_type', type=str)
+
     args = parser.parse_args()
     return args
 
@@ -164,7 +165,7 @@ def main():
         model.eval()
 
     elif (model_name == 'MiniCPMV2.6'):
-        model_name_or_path = None # Write your model path here
+        model_name_or_path = '/ssddata/liuyue/github/VisRAG/pretrained_models/MiniCPM-V-2_6' # Write your model path here
         model = Model_class.from_pretrained(model_name_or_path, trust_remote_code=True,
             attn_implementation='sdpa', torch_dtype=torch.bfloat16)
         model = model.eval().cuda()
@@ -197,18 +198,64 @@ def main():
         overwrite_config = {}
         overwrite_config["image_aspect_ratio"] = "pad"
         llava_model_args["overwrite_config"] = overwrite_config
-        tokenizer, model, image_processor, max_length = load_pretrained_model(model_name_or_path, None, model_name0, device_map=device_map, **llava_model_args)
+        tokenizer, model, image_processor, max_length = load_pretrained_model(model_name_or_path, None, model_name0, device_map=device_map, attn_implementation='eager', torch_dtype='bfloat16', **llava_model_args)
 
         model.eval()
 
-    if (model_name != 'gpt4o' and 'LLaVA-ov' not in model_name):
+    elif 'llava'  in model_name:
+        import sys
+        sys.path.append("/ssddata/liuyue/github/VLM-Visualizer/models")
+        from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+        from llava.conversation import conv_templates, SeparatorStyle
+        from llava.model.builder import load_pretrained_model
+        from llava.utils import disable_torch_init
+        from llava.mm_utils import process_images, tokenizer_image_token, get_model_name_from_path
+
+        model2path = {
+            'llava-v1.5-7b': 'liuhaotian/llava-v1.5-7b',
+            'llava-v1.5-13b': 'liuhaotian/llava-v1.5-13b',
+        }
+
+        model_path = model2path[model_name] ## "liuhaotian/llava-v1.5-7b"
+        load_8bit = False
+        load_4bit = False
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        model_name0 = get_model_name_from_path(model_path)
+        tokenizer, model, image_processor, context_len = load_pretrained_model(
+            model_path, 
+            None, # model_base
+            model_name0, 
+            load_8bit, 
+            load_4bit, 
+            device=device,
+            torch_dtype='bfloat16'
+        )
+
+        model.eval()
+
+    elif model_name == "Qwen2-VL-7B-Instruct":
+        from transformers import Qwen2VLForConditionalGeneration, AutoTokenizer, AutoProcessor
+        from qwen_vl_utils import process_vision_info
+        import torch
+
+        model = Qwen2VLForConditionalGeneration.from_pretrained(
+            "Qwen/Qwen2-VL-7B-Instruct",
+            torch_dtype=torch.bfloat16,
+            attn_implementation="flash_attention_2",
+            device_map="auto",
+        )
+        processor = AutoProcessor.from_pretrained("Qwen/Qwen2-VL-7B-Instruct")
+
+    if (model_name != 'gpt4o' and 'LLaVA-ov' not in model_name and 'llava' not in model_name and 'Qwen2-VL-7B-Instruct' not in model_name):
         model.to(rank)
     
     history_datas = []
     correct = 0
     total_num = 0
     # query_df = pd.read_parquet(query_path)
-    query_df = load_parquet(query_path)
+    # query_df = load_parquet(query_path)
+    query_df = query_df.sample(frac=1).reset_index(drop=True).loc[:500]
     for cnt, row in query_df.iterrows():
         if (cnt % world_size != rank):
             continue
@@ -380,6 +427,65 @@ def main():
                         sampling=False,
                         max_new_tokens=max_new_tokens
                     )
+                elif 'llava' in model_name:
+                    if "llama-2" in model_name.lower():
+                        conv_mode = "llava_llama_2"
+                    elif "mistral" in model_name.lower():
+                        conv_mode = "mistral_instruct"
+                    elif "v1.6-34b" in model_name.lower():
+                        conv_mode = "chatml_direct"
+                    elif "v1" in model_name.lower():
+                        conv_mode = "llava_v1"
+                    elif "mpt" in model_name.lower():
+                        conv_mode = "mpt"
+                    else:
+                        conv_mode = "llava_v0"
+
+                    conv = conv_templates[conv_mode].copy()
+                    if "mpt" in model_name.lower():
+                        roles = ('user', 'assistant')
+                    else:
+                        roles = conv.roles
+
+                    conv = conv_templates[conv_mode].copy()
+                    if "mpt" in model_name.lower():
+                        roles = ('user', 'assistant')
+                    else:
+                        roles = conv.roles
+
+                    image_tensor, images = process_images(image_list, image_processor, model.config)
+                    image = images[0]
+                    image_size = image.size
+                    if type(image_tensor) is list:
+                        image_tensor = [image.to(model.device, dtype=torch.bfloat16) for image in image_tensor]
+                    else:
+                        image_tensor = image_tensor.to(model.device, dtype=torch.bfloat16)
+
+                    input_prompt = input[0]['content'].replace('Answer:', '')
+                    if model.config.mm_use_im_start_end:
+                        inp = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN + '\n' + input_prompt
+                    else:
+                        inp = DEFAULT_IMAGE_TOKEN + '\n' + input_prompt
+
+                    conv.append_message(conv.roles[0], inp)
+                    conv.append_message(conv.roles[1], None)
+                    prompt = conv.get_prompt()
+
+                    input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0).to(model.device)
+                    with torch.inference_mode():
+                        outputs = model.generate(
+                            input_ids,
+                            images=image_tensor,
+                            image_sizes=[image_size],
+                            do_sample=False,
+                            max_new_tokens=512,
+                            use_cache=True,
+                            return_dict_in_generate=True,
+                            output_attentions=True,
+                        )
+
+                    responds = tokenizer.decode(outputs["sequences"][0]).strip().replace('</s>','')
+                    
             elif (task_type == 'multi_image'):
                 if (model_name == 'MiniCPMV2.6'):
                     input = [{'role': 'user', 'content': image_list + [input[0]['content']]}]
@@ -395,7 +501,7 @@ def main():
                 elif 'LLaVA-ov' in model_name:
                     # input = [{'role': 'user', 'content': image_list + [input[0]['content']]}]
                     image_tensors = process_images(image_list, image_processor, model.config)
-                    image_tensors = [_image.to(dtype=torch.float16, device=device) for _image in image_tensors]
+                    image_tensors = [_image.to(dtype=torch.bfloat16, device=device) for _image in image_tensors]
                     conv_template = "qwen_1_5"
                     # question = f"{DEFAULT_IMAGE_TOKEN}\n\n{DEFAULT_IMAGE_TOKEN}\n" + input[0]['content']
 
@@ -436,6 +542,45 @@ def main():
                     #     sampling=False,
                     #     max_new_tokens=max_new_tokens
                     # )
+                elif model_name == "Qwen2-VL-7B-Instruct":
+                    messages = [
+                        {
+                            "role": "user",
+                            "content": [
+                                # {"type": "image", "image": "/ssddata/liuyue/github/悲伤.jpeg"},
+                                # {"type": "image", "image": "/ssddata/liuyue/github/人脸女.png"},
+                                # {"type": "text", "text": "Identify the similarities between these images."},
+                            ],
+                        }
+                    ]
+                    for image in image_list:
+                        messages[0]["content"].append({"type": "image", "image": image})
+                    messages[0]["content"].append({"type": "text", "text": input[0]['content']})
+
+                    # Preparation for inference
+                    text = processor.apply_chat_template(
+                        messages, tokenize=False, add_generation_prompt=True
+                    )
+                    image_inputs, video_inputs = process_vision_info(messages)
+                    inputs = processor(
+                        text=[text],
+                        images=image_inputs,
+                        videos=video_inputs,
+                        padding=True,
+                        return_tensors="pt",
+                    )
+                    inputs = inputs.to("cuda")
+
+                    # Inference
+                    generated_ids = model.generate(**inputs, max_new_tokens=max_new_tokens)
+                    generated_ids_trimmed = [
+                        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+                    ]
+                    output_text = processor.batch_decode(
+                        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+                    )
+
+                    responds = output_text[0]
                 
                 elif (model_name == 'gpt4o'):
                     max_retries = 10

@@ -175,7 +175,7 @@ if __name__ == "__main__":
         df3 = df2.groupby(by=['query-id']).sum()
         df3['correct'] = (df3['correct'] > 0) ###
 
-        fig = plt.figure(figsize=(10,10), dpi=300)
+        fig = plt.figure(figsize=(5,5), dpi=300)
         ax = plt.gca()
         sns.scatterplot(
             data = df3,
@@ -187,5 +187,5 @@ if __name__ == "__main__":
         ax.set_ylim(bottom=-0.05)
         ax.set_xlabel(f'Rank1 score')
         ax.set_ylabel(f'(Rank1 score - Rank3 score) / Rank1 score')
-        ax.set_title(f'{dataset}')
-        fig.savefig(f"{outdir.format(dataset)}/{dataset}.png")
+        ax.set_title(f'{dataset}', fontsize=12, fontweight='bold')
+        fig.savefig(f"{outdir.format(dataset)}/{dataset}.png", bbox_inches='tight', pad_inches = 0)

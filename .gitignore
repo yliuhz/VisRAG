@@ -3,6 +3,8 @@ data
 logs
 pretrained_models
 qa_datasets
+qa_datasets2
+
 
 
 # Byte-compiled / optimized / DLL files

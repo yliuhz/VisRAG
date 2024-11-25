@@ -86,6 +86,8 @@ def main():
         else:
             from transformers import AutoModel as Model_class
             from transformers import AutoModelForCausalLM as ModelForCausalLM_class
+
+            print(f'I am here')
         
     if (model_name == 'MiniCPM'):
         model_name_or_path = None # Write your model path here
@@ -93,14 +95,14 @@ def main():
         model = ModelForCausalLM_class.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, trust_remote_code=True)
 
     elif (model_name == 'MiniCPMV2.0'):
-        model_name_or_path = "/ssddata/liuyue/github/VisRAG/pretrained_models/MiniCPM-V-2" # Write your model path here
+        model_name_or_path = "/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/MiniCPM-V-2" # Write your model path here
         tokenizer = Tokenizer_class.from_pretrained(model_name_or_path, trust_remote_code=True)
         model = ModelForCausalLM_class.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, trust_remote_code=True)
         model = model.to(device='cuda', dtype=torch.bfloat16)
         model.eval()
 
     elif (model_name == 'MiniCPMV2.6'):
-        model_name_or_path = "/ssddata/liuyue/github/VisRAG/pretrained_models/MiniCPM-V-2_6" # Write your model path here
+        model_name_or_path = "/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/MiniCPM-V-2_6" # Write your model path here
         model = Model_class.from_pretrained(model_name_or_path, trust_remote_code=True,
             attn_implementation='sdpa', torch_dtype=torch.bfloat16)
         model = model.eval().cuda()
@@ -112,6 +114,7 @@ def main():
 
     ### process input
     image_list = [Image.open(image_path).convert('RGB')]
+    print(image_list[0])
 
     if (model_name == 'MiniCPMV2.0'):
         input = [{'role': 'user', 'content': f"Answer the question using a single word or phrase.\nQuestion:{query}\nAnswer:"}]
