@@ -120,7 +120,8 @@ def main():
             raise Exception("ocr_type is None!")
         ocr_type = args.ocr_type
     
-    input_dir = "/ssddata/liuyue/github/VisRAG/qa_datasets" # Write your input path here
+    input_dir = "/ssddata/liuyue/github/PruneRAG/VisRAG/qa_datasets" # Write your input path here
+    input_dir_sample = "/ssddata/liuyue/github/PruneRAG/VisRAG/qa_datasets_sample"
     # if (task_type == 'text'):
     #     input_dir = os.path.join(input_dir, 'ocr', f'ocr_{ocr_type}', dataset_name)
     # else:
@@ -129,7 +130,8 @@ def main():
     # query_path = os.path.join(input_dir, f'{dataset_name}-eval-queries.parquet')
     # corpus_path = os.path.join(input_dir, f'{dataset_name}-eval-corpus.parquet')
 
-    query_path = os.path.join(input_dir, f'VisRAG-Ret-Test-{dataset_name}', 'queries')
+    # query_path = os.path.join(input_dir, f'VisRAG-Ret-Test-{dataset_name}', 'queries')
+    query_path = os.path.join(input_dir_sample, f'VisRAG-Ret-Test-{dataset_name}', 'queries')
     corpus_path = os.path.join(input_dir, f'VisRAG-Ret-Test-{dataset_name}', 'corpus')
 
     # build docid->content
@@ -166,14 +168,14 @@ def main():
         model = ModelForCausalLM_class.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, trust_remote_code=True)
 
     elif (model_name == 'MiniCPMV2.0'):
-        model_name_or_path = "/ssddata/liuyue/github/VisRAG/pretrained_models/MiniCPM-V-2" # Write your model path here
+        model_name_or_path = "/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/MiniCPM-V-2" # Write your model path here
         tokenizer = Tokenizer_class.from_pretrained(model_name_or_path, trust_remote_code=True)
         model = ModelForCausalLM_class.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16, trust_remote_code=True)
         model = model.to(device='cuda', dtype=torch.bfloat16)
         model.eval()
 
     elif (model_name == 'MiniCPMV2.6'):
-        model_name_or_path = '/ssddata/liuyue/github/VisRAG/pretrained_models/MiniCPM-V-2_6' # Write your model path here
+        model_name_or_path = '/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/MiniCPM-V-2_6' # Write your model path here
         model = Model_class.from_pretrained(model_name_or_path, trust_remote_code=True,
             attn_implementation='sdpa', torch_dtype=torch.bfloat16)
         model = model.eval().cuda()
@@ -189,10 +191,10 @@ def main():
         accelerator = Accelerator()
 
         model2path = {
-            'LLaVA-ov-0.5b': '/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-0.5b-ov',
-            'LLaVA-ov-7b': '/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-7b-ov',
-            'LLaVA-ov-72b-sft': '/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-72b-ov-sft',
-            'LLaVA-ov-72b-chat': '/ssddata/liuyue/github/VisRAG/pretrained_models/llava-onevision-qwen2-72b-ov-chat',
+            'LLaVA-ov-0.5b': '/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/llava-onevision-qwen2-0.5b-ov',
+            'LLaVA-ov-7b': '/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/llava-onevision-qwen2-7b-ov',
+            'LLaVA-ov-72b-sft': '/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/llava-onevision-qwen2-72b-ov-sft',
+            'LLaVA-ov-72b-chat': '/ssddata/liuyue/github/PruneRAG/VisRAG/pretrained_models/llava-onevision-qwen2-72b-ov-chat',
         }
 
         model_name_or_path = model2path[model_name]
@@ -206,7 +208,7 @@ def main():
         overwrite_config = {}
         overwrite_config["image_aspect_ratio"] = "pad"
         llava_model_args["overwrite_config"] = overwrite_config
-        tokenizer, model, image_processor, max_length = load_pretrained_model(model_name_or_path, None, model_name0, device_map=device_map, torch_dtype='bfloat16', **llava_model_args)
+        tokenizer, model, image_processor, max_length = load_pretrained_model(model_name_or_path, None, model_name0, device_map=device_map, torch_dtype='bfloat16', attn_implementation='eager', **llava_model_args)
 
         model.eval()
 
@@ -237,7 +239,8 @@ def main():
             load_8bit, 
             load_4bit, 
             device=device,
-            torch_dtype='bfloat16'
+            torch_dtype='bfloat16',
+            attn_implementation='eager',
         )
 
         model.eval()
@@ -251,8 +254,7 @@ def main():
     total_num = 0
     # query_df = pd.read_parquet(query_path)
     query_df = load_parquet(query_path)
-    query_df = query_df.sample(frac=1).reset_index(drop=True).loc[:200, :]
-    df_attn = pd.DataFrame(columns=['qid', 'attn_system', 'attn_image', 'attn_user',  'attn_newline', 'attn_output', 'token_system', 'token_image', 'token_user', 'token_newline', 'token_output'])
+    df_attn = pd.DataFrame(columns=['qid', 'layer', 'attn_system', 'attn_image', 'attn_user',  'attn_newline', 'attn_output', 'token_system', 'token_image', 'token_user', 'token_newline', 'token_output'])
     for cnt, row in query_df.iterrows():
         if (cnt % world_size != rank):
             continue
@@ -546,55 +548,48 @@ def main():
                     # print(text_outputs[0])
                     responds = text_outputs[0]
 
+                    input_embeds, embed_sizes = model.prepare_inputs_labels_for_multimodal(input_ids, None, None, None, None, image_tensors, ["image"], image_sizes=image_sizes, return_embed_size=True)
+                    assert sum(embed_sizes[0]) == input_embeds.shape[1]
+                    embed_sizes_cumsum = np.cumsum(embed_sizes[0])
+                    system_idx = torch.arange(0, embed_sizes_cumsum[0]).int()
+                    image_idx = torch.tensor([]).int()
+                    newline_idx = torch.tensor([]).int()
+                    for iidx in range(len(image_tensors)):
+                        image_idx = torch.cat([image_idx, torch.arange(embed_sizes_cumsum[iidx*2], embed_sizes_cumsum[iidx*2+1]).int()])
+                        if iidx < len(image_tensors)-1:
+                            newline_idx = torch.cat([newline_idx, torch.arange(embed_sizes_cumsum[iidx*2+1], embed_sizes_cumsum[iidx*2+2]).int()]) ## there is a '\n' between two image tokens
+                    user_idx = torch.arange(embed_sizes_cumsum[-2], embed_sizes_cumsum[-1]).int()
 
-                    # constructing the llm attention matrix
-                    aggregated_prompt_attention = []
-                    for i, layer in enumerate(outputs["attentions"][0]):
-                        layer_attns = layer.squeeze(0)
-                        attns_per_head = layer_attns.mean(dim=0)
-                        cur = attns_per_head[:-1].cpu().clone()
-                        # following the practice in `aggregate_llm_attention`
-                        # we are zeroing out the attention to the first <bos> token
-                        # for the first row `cur[0]` (corresponding to the next token after <bos>), however,
-                        # we don't do this because <bos> is the only token that it can attend to
-                        cur[1:, 0] = 0.
-                        cur[1:] = cur[1:] / cur[1:].sum(-1, keepdim=True)
-                        aggregated_prompt_attention.append(cur)
-                    aggregated_prompt_attention = torch.stack(aggregated_prompt_attention).mean(dim=0)
+                    nlayers = len(outputs["attentions"][0])
+                    nouttokens = len(outputs["sequences"][0])
 
-                    # llm_attn_matrix will be of torch.Size([N, N])
-                    # where N is the total number of input (both image and text ones) + output tokens
-                    llm_attn_matrix = heterogenous_stack(
-                        [torch.tensor([1])]
-                        + list(aggregated_prompt_attention) 
-                        + list(map(aggregate_llm_attention, outputs["attentions"]))
-                    )
                     
-                    input_token_len = model.get_vision_tower().num_patches*n_images + len(input_ids[0]) # -1 for the <image> token
-                    vision_token_starts, vision_token_ends = [], []
-                    for i in range(n_images):
-                        vision_token_starts.append(len(tokenizer(prompt_question.split("<image>")[i], return_tensors='pt')["input_ids"][0])) ## len(input_ids)=1
-                        vision_token_ends.append(vision_token_starts[i] + model.get_vision_tower().num_patches)
 
-                        if i > 0:
-                            vision_token_starts[i] += model.get_vision_tower().num_patches + len(tokenizer(prompt_question.split("<image>")[i-1], return_tensors='pt')["input_ids"][0])
-                            vision_token_ends[i] += model.get_vision_tower().num_patches + len(tokenizer(prompt_question.split("<image>")[i-1], return_tensors='pt')["input_ids"][0])
-
-                    overall_attn_weights_over_vis_tokens = np.zeros([n_images])
-                    for i, (row, _) in enumerate(
-                        zip(
-                            llm_attn_matrix[input_token_len:], 
-                            outputs["sequences"][0].tolist() ### for each output token, row=its attention vector, row[i]=token i's contribution
+                    for i, layer in enumerate(outputs["attentions"][0]): ## 第一维=output token, 第二维=LLM layer id
+                        newline = [system_idx.shape[0], image_idx.shape[0], user_idx.shape[0], newline_idx.shape[0], len(outputs['sequences'][0])]
+                        layeri = []
+                        for j in range(len(outputs['attentions'])):
+                            layeri.append(outputs['attentions'][j][i])
+                        
+                        llm_attn_matrix = heterogenous_stack(
+                            list(map(aggregate_llm_attention, layeri))
                         )
-                    ):
-                        for j in range(n_images):
-                            overall_attn_weights_over_vis_tokens[j] = max(
-                                overall_attn_weights_over_vis_tokens[j],
-                                row[vision_token_starts[j]:vision_token_ends[j]].sum().item()
-                            )
-                    prefer_doc_idx = np.argmax(overall_attn_weights_over_vis_tokens)
 
-                    
+                        a_system, a_image, a_user, a_output, a_newline = 0.0, 0.0, 0.0, 0.0, 0.0
+
+                        n_output_tokens = len(outputs['sequences'][0])
+                        output_token_attns = llm_attn_matrix
+
+                        a_system = output_token_attns[:, system_idx].sum() ## sum of attention on system tokens
+                        a_image = output_token_attns[:, image_idx].sum()
+                        a_user = output_token_attns[:, user_idx].sum()
+                        a_newline = output_token_attns[:, newline_idx].sum()
+                        a_output = output_token_attns[:, -n_output_tokens:].sum()
+                        
+                        newline = [a_system, a_image, a_user, a_newline, a_output] + newline
+                        newline = [qid, i] + newline
+
+                        df_attn.loc[len(df_attn)] = newline
 
                     del outputs
                     del image_tensors
@@ -665,7 +660,6 @@ def main():
             print(f"responds:{responds}")
             print(f"answer:{answer}")
             print(f'gt_doc_index:{gt_doc_index}')
-            print(f'prefer_doc_idx:{prefer_doc_idx}')
             print('---------------')
             if (responds == answer):
                 correct += 1
@@ -680,7 +674,6 @@ def main():
             print(f"responds:{responds}")
             print(f"answer:{answer}")
             print(f'gt_doc_index:{gt_doc_index}')
-            print(f'prefer_doc_idx:{prefer_doc_idx}')
             print('---------------')
             if (responds == answer):
                 correct += 1
@@ -700,7 +693,6 @@ def main():
             print(f"responds:{responds}")
             print(f"answer:{answer}")
             print(f'gt_doc_index:{gt_doc_index}')
-            print(f'prefer_doc_idx:{prefer_doc_idx}')
             print('---------------')
             if (responds == answer):
                 correct += 1
@@ -723,7 +715,6 @@ def main():
             print(f"responds:{responds}")
             print(f"answer:{answer}")
             print(f'gt_doc_index:{gt_doc_index}')
-            print(f'prefer_doc_idx:{prefer_doc_idx}')
             print('---------------')
             for answer_item in answer:
                 if (responds == answer_item):
@@ -741,7 +732,6 @@ def main():
             print(f"responds:{responds}")
             print(f"answer:{answer}")
             print(f'gt_doc_index:{gt_doc_index}')
-            print(f'prefer_doc_idx:{prefer_doc_idx}')
             print('---------------')
             if (responds == answer):
                 correct += 1
@@ -761,7 +751,6 @@ def main():
             print(f"responds:{responds}")
             print(f"answer:{answer}")
             print(f'gt_doc_index:{gt_doc_index}')
-            print(f'prefer_doc_idx:{prefer_doc_idx}')
             print('---------------')
             for answer_item in answer:
                 if (responds == answer_item):
@@ -795,10 +784,9 @@ def main():
 
         qids.append(qid)
         gt_doc_indexes.append(gt_doc_index)
-        prefer_doc_indexes.append(prefer_doc_idx)
         corrects.append(correct_sig)
                 
-    output_dir = "/ssddata/liuyue/github/VisRAG/data/checkpoints/generator/which_important_by_attn" # Write your output path here
+    output_dir = "/ssddata/liuyue/github/PruneRAG/VisRAG/data/checkpoints/generator/layer_attn" # Write your output path here
 
     
 
@@ -842,13 +830,7 @@ def main():
         for history_data in history_datas:
             file.write(history_data + '\n')
    
-    df = pd.DataFrame({
-        'query-id': qids,
-        'gt_doc_index': gt_doc_indexes,
-        'prefer_doc_index': prefer_doc_indexes,
-        'correct': corrects,
-    })
-    df.to_csv(os.path.join(output_dir, f"{prefix}_attn.csv"), index=False)
+    df_attn.to_csv(os.path.join(output_dir, f"{prefix}_attn.csv"), index=False)
     
 if __name__ == '__main__':
 

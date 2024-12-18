@@ -6,7 +6,7 @@ cd ..
 MODEL=$1
 # MODEL=MiniCPMV2.0
 
-[[ -d logs/generate/sample/${MODEL}_prune ]] || mkdir -p logs/generate/sample/${MODEL}_prune
+[[ -d logs/generate/sample/layer_attn/${MODEL} ]] || mkdir -p logs/generate/sample/layer_attn/${MODEL}
 
 # for MODEL in LLaVA-ov-0.5b LLaVA-ov-7b LLaVA-ov-72b-sft LLaVA-ov-72b-chat
 # do
@@ -18,7 +18,7 @@ do
 for TOPK in 1 3 5 7 9
 do
 CUDA_VISIBLE_DEVICES=0,1,2,3 \
-    python -u scripts/generate/generate.py \
+    python -u scripts/generate/generate_layer_attn.py \
         --model_name $MODEL \
         --dataset_name $DATA \
         --rank 0 \
@@ -29,7 +29,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 \
         --task_type multi_image \
         --concatenate_type horizontal \
         --ocr_type '' \
-        2>&1 | tee logs/generate/sample/${MODEL}_prune/eval_g_${DATA}_${ORACLE}_${TOPK}.log
+        2>&1 | tee logs/generate/sample/layer_attn/${MODEL}/eval_g_${DATA}_${ORACLE}_${TOPK}.log
 done
 done
 done

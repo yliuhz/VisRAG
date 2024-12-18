@@ -771,6 +771,7 @@ def main():
     output_dir = "/ssddata/liuyue/github/PruneRAG/VisRAG/data/checkpoints/generator/sample" # Write your output path here
 
     prefix = model_name
+    prefix = f'{model_name}_prune'
     output_dir = os.path.join(output_dir, prefix)
     prefix += '_'
     if (use_positive_sample):
